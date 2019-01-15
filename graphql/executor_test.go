@@ -3,6 +3,7 @@ package graphql
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -189,6 +190,76 @@ func TestRepeatedFragment(t *testing.T) {
 
 	if ctr != 1 {
 		t.Errorf("Expected args for fragment to be parsed once, but they were parsed %d times.", ctr)
+	}
+}
+
+func TestNewGraphQLError(t *testing.T) {
+	testCases := []*struct {
+		name     string
+		err      error
+		expected graphQLError
+	}{
+		{
+			name: "should return internal error when err is nil",
+			err:  nil,
+			expected: graphQLError{
+				Message: "Internal server error",
+				Extensions: errorExtensions{
+					Code: "INTERNAL_SERVER_ERROR",
+				},
+			},
+		},
+		{
+			name: "should return internal error for regular errors (not ClientError)",
+			err:  fmt.Errorf("error occurred"),
+			expected: graphQLError{
+				Message: "Internal server error",
+				Extensions: errorExtensions{
+					Code: "INTERNAL_SERVER_ERROR",
+				},
+			},
+		},
+		{
+			name: "should convert ClientError to graphQLError",
+			err:  ClientError{message: "error occurred"},
+			expected: graphQLError{
+				Message: "error occurred",
+				Extensions: errorExtensions{
+					Code: "",
+				},
+			},
+		},
+		{
+			name: "should convert pathError to graphQLError",
+			err: &pathError{
+				path:  []string{"a", "b", "c"},
+				inner: ClientError{message: "error occurred"},
+			},
+			expected: graphQLError{
+				Message: "error occurred",
+				Path:    []string{"c", "b", "a"},
+				Extensions: errorExtensions{
+					Code: "",
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			gErr := newGraphQLError(tc.err)
+			if !reflect.DeepEqual(tc.expected.Path, gErr.Path) {
+				t.Fatalf("expected path %v, but actual path is %v", tc.expected.Path, gErr.Path)
+			}
+
+			if !reflect.DeepEqual(tc.expected.Message, gErr.Message) {
+				t.Fatalf("expected message %v, but actual message is %v", tc.expected.Message, gErr.Message)
+			}
+
+			if !reflect.DeepEqual(tc.expected.Extensions.Code, gErr.Extensions.Code) {
+				t.Fatalf("expected code %v, but actual code is %v", tc.expected.Extensions.Code, gErr.Extensions.Code)
+			}
+		})
 	}
 }
 

@@ -104,6 +104,7 @@ type SanitizedError interface {
 
 type SafeError struct {
 	message string
+	code    string
 }
 
 type ClientError SafeError
@@ -124,6 +125,10 @@ func (e SafeError) SanitizedError() string {
 	return e.message
 }
 
+func NewError(code string, format string, a ...interface{}) error {
+	return ClientError{message: fmt.Sprintf(format, a...), code: code}
+}
+
 func NewClientError(format string, a ...interface{}) error {
 	return ClientError{message: fmt.Sprintf(format, a...)}
 }
@@ -132,11 +137,11 @@ func NewSafeError(format string, a ...interface{}) error {
 	return SafeError{message: fmt.Sprintf(format, a...)}
 }
 
-func sanitizeError(err error) string {
+func sanitizeError(err error) error {
 	if sanitized, ok := err.(SanitizedError); ok {
-		return sanitized.SanitizedError()
+		return fmt.Errorf(sanitized.SanitizedError())
 	}
-	return "Internal server error"
+	return fmt.Errorf("Internal server error")
 }
 
 func isCloseError(err error) bool {

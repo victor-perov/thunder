@@ -9,10 +9,54 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/samsarahq/thunder/concurrencylimiter"
 	"github.com/samsarahq/thunder/reactive"
 )
+
+const maxDepth = 100
+
+type errorExtensions struct {
+	Code      string    `json:"code,omitempty"`
+	Timestamp time.Time `json:"timestamp,omitempty"`
+}
+
+type graphQLError struct {
+	Message    string          `json:"message"`
+	Path       []string        `json:"path"`
+	Extensions errorExtensions `json:"extensions,omitempty"`
+}
+
+func newGraphQLError(err error) graphQLError {
+	return newGraphQLErrorRecursive(err, 0)
+}
+
+func newGraphQLErrorRecursive(err error, depth int) graphQLError {
+	if depth >= maxDepth {
+		panic("recursion depth has exceeded the limit for GraphQL error")
+	}
+	switch e := err.(type) {
+	case *pathError:
+		gErr := newGraphQLErrorRecursive(e.inner, depth)
+		gErr.Path = e.Path()
+		return gErr
+	case ClientError:
+		return graphQLError{
+			Message: sanitizeError(e).Error(),
+			Extensions: errorExtensions{
+				Code:      e.code,
+				Timestamp: time.Now().UTC(),
+			},
+		}
+	default:
+		return newInternalError(e)
+	}
+}
+
+func newInternalError(err error) graphQLError {
+	return newGraphQLError(NewError("INTERNAL_SERVER_ERROR", sanitizeError(err).Error()))
+}
 
 type pathError struct {
 	inner error
@@ -20,11 +64,6 @@ type pathError struct {
 }
 
 func nestPathError(key string, err error) error {
-	// Don't nest SanitzedError's, as they are intended for human consumption.
-	if se, ok := err.(SanitizedError); ok {
-		return se
-	}
-
 	if pe, ok := err.(*pathError); ok {
 		return &pathError{
 			inner: pe.inner,
@@ -36,6 +75,14 @@ func nestPathError(key string, err error) error {
 		inner: err,
 		path:  []string{key},
 	}
+}
+
+func (pe *pathError) Path() []string {
+	p := []string{}
+	for i := len(pe.path) - 1; i >= 0; i-- {
+		p = append(p, pe.path[i])
+	}
+	return p
 }
 
 func ErrorCause(err error) error {
