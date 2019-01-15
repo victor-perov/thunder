@@ -329,6 +329,12 @@ func getScalarArgParser(typ reflect.Type) (*argParser, graphql.Type, bool) {
 	return nil, nil, false
 }
 
+// AddParser adds custom type parser, should be invoked before SchemaBuild
+func AddParser(typ reflect.Type, parser func(value interface{}, dest reflect.Value) error, key string) {
+	scalarArgParsers[typ] = &argParser{FromJSON: parser, Type: typ}
+	scalars[typ] = key
+}
+
 // scalarArgParsers are the static arg parsers that we can use for all scalar &
 // static types.
 var scalarArgParsers = map[reflect.Type]*argParser{
