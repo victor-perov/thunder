@@ -39,7 +39,7 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		response := httpResponse{}
 		if err != nil {
 			log.Println("ERROR: ", err)
-			response.Errors = newGraphQLError(err)
+			response.Errors = []interface{}{newGraphQLError(err)}
 		} else {
 			response.Data = value
 		}
