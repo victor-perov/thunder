@@ -3,7 +3,6 @@ package graphql
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"sync"
 
@@ -54,18 +53,18 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method != "POST" {
-		writeResponse(nil, errors.New("request must be a POST"))
+		writeResponse(nil, NewClientError("request must be a POST"))
 		return
 	}
 
 	if r.Body == nil {
-		writeResponse(nil, errors.New("request must include a query"))
+		writeResponse(nil, NewClientError("request must include a query"))
 		return
 	}
 
 	var params httpPostBody
-	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
-		writeResponse(nil, err)
+	if json.NewDecoder(r.Body).Decode(&params) != nil {
+		writeResponse(nil, NewClientError("request must has a valid JSON structure"))
 		return
 	}
 
@@ -110,11 +109,9 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		current, err := output.Current, output.Error
 
 		if err != nil {
-			if ErrorCause(err) == context.Canceled {
-				return nil, err
+			if ErrorCause(err) != context.Canceled {
+				writeResponse(nil, err)
 			}
-
-			writeResponse(nil, err)
 			return nil, err
 		}
 
