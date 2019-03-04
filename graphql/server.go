@@ -107,22 +107,13 @@ type SafeError struct {
 	code    string
 }
 
-type ClientError struct {
-	code        string
-	message     string
-	description string
-}
+type ClientError SafeError
 
 func (e ClientError) Error() string {
 	return e.message
 }
 
-// SanitizedError returns description of the error
-// if description is not set - returns message
 func (e ClientError) SanitizedError() string {
-	if e.description != "" {
-		return e.description
-	}
 	return e.message
 }
 
@@ -140,12 +131,6 @@ func NewError(code string, format string, a ...interface{}) error {
 
 func NewClientError(format string, a ...interface{}) error {
 	return ClientError{message: fmt.Sprintf(format, a...)}
-}
-
-// NewClientErrorWithDescription provides setting description field
-// along with message
-func NewClientErrorWithDescription(description string, format string, a ...interface{}) error {
-	return ClientError{message: fmt.Sprintf(format, a...), description: description}
 }
 
 func NewSafeError(format string, a ...interface{}) error {
