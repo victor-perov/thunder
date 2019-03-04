@@ -21,6 +21,9 @@ type ComputationOutput struct {
 	Error    error
 }
 
+// outsideMiddlewareErrorHandlerFunc type describes function
+// that will be executed in case if error happens outside processing of MiddlewareFunc
+type outsideMiddlewareErrorHandlerFunc func(err error)
 type MiddlewareFunc func(input *ComputationInput, next MiddlewareNextFunc) *ComputationOutput
 type MiddlewareNextFunc func(input *ComputationInput) *ComputationOutput
 
