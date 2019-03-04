@@ -6,17 +6,16 @@ import (
 )
 
 type resolver struct {
-
 }
 
-func (r resolver) Resolve(){}
+func (r resolver) Resolve() {}
 
-func TestPrepareResolveArgs(t *testing.T){
+// TODO: finish it
+func TestPrepareResolveArgs(t *testing.T) {
 	s := Schema{}
 	schema, err := s.Build()
 	if err != nil {
-		fmt.Println(err)
+		t.Errorf("Unexpected error: '%s'", err)
 	}
-
-	s.
+	fmt.Print(schema)
 }

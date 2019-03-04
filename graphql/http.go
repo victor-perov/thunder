@@ -17,9 +17,21 @@ func HTTPHandler(schema *Schema, middlewares ...MiddlewareFunc) http.Handler {
 	}
 }
 
+// HTTPHandlerWithErrorHandling works as HTTPHandler
+// but in addition provides passing errorHandler func
+// which will catch errors happened outside middleware
+func HTTPHandlerWithErrorHandling(schema *Schema, errorHandler outsideMiddlewareErrorHandlerFunc, middlewares ...MiddlewareFunc) http.Handler {
+	return &httpHandler{
+		schema:       schema,
+		errorHandler: errorHandler,
+		middlewares:  middlewares,
+	}
+}
+
 type httpHandler struct {
-	schema      *Schema
-	middlewares []MiddlewareFunc
+	schema       *Schema
+	errorHandler outsideMiddlewareErrorHandlerFunc
+	middlewares  []MiddlewareFunc
 }
 
 type httpPostBody struct {
@@ -43,6 +55,9 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		responseJSON, err := json.Marshal(response)
 		if err != nil {
+			if h.errorHandler != nil {
+				h.errorHandler(err)
+			}
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -63,8 +78,11 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var params httpPostBody
-	if json.NewDecoder(r.Body).Decode(&params) != nil {
-		writeResponse(nil, NewClientError("request must has a valid JSON structure"))
+	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
+		if h.errorHandler != nil {
+			h.errorHandler(err)
+		}
+		writeResponse(nil, NewClientErrorWithDescription(err.Error(), "request must have a valid JSON structure"))
 		return
 	}
 
