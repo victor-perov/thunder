@@ -19,7 +19,6 @@ const maxDepth = 100
 
 type errorExtensions struct {
 	Code      string    `json:"code,omitempty"`
-	Message   string    `json:"message,omitempty"`
 	Timestamp time.Time `json:"timestamp,omitempty"`
 }
 
@@ -43,16 +42,12 @@ func newGraphQLErrorRecursive(err error, depth int) graphQLError {
 		gErr.Path = e.Path()
 		return gErr
 	case ClientError:
-		ext := errorExtensions{
-			Code:      e.code,
-			Timestamp: time.Now().UTC(),
-		}
-		if e.description != "" {
-			ext.Message = e.SanitizedError()
-		}
 		return graphQLError{
-			Message:    e.Error(),
-			Extensions: ext,
+			Message: sanitizeError(e).Error(),
+			Extensions: errorExtensions{
+				Code:      e.code,
+				Timestamp: time.Now().UTC(),
+			},
 		}
 	default:
 		return newInternalError(e)

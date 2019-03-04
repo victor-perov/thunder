@@ -82,7 +82,7 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if h.errorHandler != nil {
 			h.errorHandler(err)
 		}
-		writeResponse(nil, NewClientErrorWithDescription(err.Error(), "request must have a valid JSON structure"))
+		writeResponse(nil, NewClientError("request must have a valid JSON structure"))
 		return
 	}
 
