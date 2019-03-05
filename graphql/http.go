@@ -20,18 +20,20 @@ func HTTPHandler(schema *Schema, middlewares ...MiddlewareFunc) http.Handler {
 // HTTPHandlerWithErrorHandling works as HTTPHandler
 // but in addition provides passing errorHandler func
 // which will catch errors happened outside middleware
-func HTTPHandlerWithErrorHandling(schema *Schema, errorHandler outsideMiddlewareErrorHandlerFunc, middlewares ...MiddlewareFunc) http.Handler {
+func HTTPHandlerWithHooks(schema *Schema, errorHandler outsideMiddlewareErrorHandlerFunc, successfulResponseHook responseHook, middlewares ...MiddlewareFunc) http.Handler {
 	return &httpHandler{
-		schema:       schema,
-		errorHandler: errorHandler,
-		middlewares:  middlewares,
+		schema:                 schema,
+		errorHandler:           errorHandler,
+		middlewares:            middlewares,
+		successfulResponseHook: successfulResponseHook,
 	}
 }
 
 type httpHandler struct {
-	schema       *Schema
-	errorHandler outsideMiddlewareErrorHandlerFunc
-	middlewares  []MiddlewareFunc
+	schema                 *Schema
+	errorHandler           outsideMiddlewareErrorHandlerFunc
+	successfulResponseHook responseHook
+	middlewares            []MiddlewareFunc
 }
 
 type httpPostBody struct {
@@ -63,6 +65,10 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		if w.Header().Get("Content-Type") == "" {
 			w.Header().Set("Content-Type", "application/json")
+		}
+
+		if h.successfulResponseHook != nil {
+			h.successfulResponseHook(responseJSON)
 		}
 		w.Write(responseJSON)
 	}
