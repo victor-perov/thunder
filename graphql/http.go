@@ -67,7 +67,7 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 		}
 
-		if h.successfulResponseHook != nil {
+		if h.successfulResponseHook != nil && response.Errors == nil {
 			h.successfulResponseHook(responseJSON)
 		}
 		w.Write(responseJSON)
