@@ -47,7 +47,7 @@ type httpResponse struct {
 }
 
 func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	writeResponse := func(value interface{}, err error) {
+	writeResponse := func(value interface{}, err error, query *string) {
 		response := httpResponse{}
 		if err != nil {
 			response.Errors = []interface{}{newGraphQLError(err)}
@@ -58,7 +58,7 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		responseJSON, err := json.Marshal(response)
 		if err != nil {
 			if h.errorHandler != nil {
-				h.errorHandler(err)
+				h.errorHandler(err, query)
 			}
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -74,27 +74,27 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method != "POST" {
-		writeResponse(nil, NewClientError("request must be a POST"))
+		writeResponse(nil, NewClientError("request must be a POST"), nil)
 		return
 	}
 
 	if r.Body == nil {
-		writeResponse(nil, NewClientError("request must include a query"))
+		writeResponse(nil, NewClientError("request must include a query"), nil)
 		return
 	}
 
 	var params httpPostBody
 	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
 		if h.errorHandler != nil {
-			h.errorHandler(err)
+			h.errorHandler(err, nil)
 		}
-		writeResponse(nil, NewClientError("request must have a valid JSON structure"))
+		writeResponse(nil, NewClientError("request must have a valid JSON structure"), nil)
 		return
 	}
 
 	query, err := Parse(params.Query, params.Variables)
 	if err != nil {
-		writeResponse(nil, err)
+		writeResponse(nil, err, &params.Query)
 		return
 	}
 
@@ -103,7 +103,7 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		schema = h.schema.Mutation
 	}
 	if err := PrepareQuery(schema, query.SelectionSet); err != nil {
-		writeResponse(nil, err)
+		writeResponse(nil, err, &params.Query)
 		return
 	}
 
@@ -134,12 +134,12 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		if err != nil {
 			if ErrorCause(err) != context.Canceled {
-				writeResponse(nil, err)
+				writeResponse(nil, err, &params.Query)
 			}
 			return nil, err
 		}
 
-		writeResponse(current, nil)
+		writeResponse(current, nil, nil)
 		return nil, nil
 	}, DefaultMinRerunInterval)
 
