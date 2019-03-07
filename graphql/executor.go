@@ -32,6 +32,19 @@ func newGraphQLError(err error) graphQLError {
 	return newGraphQLErrorRecursive(err, 0)
 }
 
+func flattenError(err error, depth int) error {
+	if depth >= maxDepth {
+		panic("recursion depth has exceeded the limit")
+	}
+	switch e := err.(type) {
+	case *pathError:
+		fErr := flattenError(e.inner, depth)
+		return fErr
+	default:
+		return e
+	}
+}
+
 func newGraphQLErrorRecursive(err error, depth int) graphQLError {
 	if depth >= maxDepth {
 		panic("recursion depth has exceeded the limit for GraphQL error")

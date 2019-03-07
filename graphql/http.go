@@ -50,6 +50,9 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	writeResponse := func(value interface{}, err error, query *string) {
 		response := httpResponse{}
 		if err != nil {
+			if h.errorHandler != nil {
+				h.errorHandler(flattenError(err, 0), query)
+			}
 			response.Errors = []interface{}{newGraphQLError(err)}
 		} else {
 			response.Data = value
