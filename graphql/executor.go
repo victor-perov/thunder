@@ -38,7 +38,7 @@ func flattenError(err error, depth int) error {
 	}
 	switch e := err.(type) {
 	case *pathError:
-		fErr := flattenError(e.inner, depth)
+		fErr := flattenError(e.inner, depth+1)
 		return fErr
 	default:
 		return e
@@ -51,7 +51,7 @@ func newGraphQLErrorRecursive(err error, depth int) graphQLError {
 	}
 	switch e := err.(type) {
 	case *pathError:
-		gErr := newGraphQLErrorRecursive(e.inner, depth)
+		gErr := newGraphQLErrorRecursive(e.inner, depth+1)
 		gErr.Path = e.Path()
 		return gErr
 	case ClientError:
