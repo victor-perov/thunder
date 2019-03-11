@@ -60,7 +60,7 @@ func TestEndrequest(t *testing.T) {
 	}
 	updatedPredicted := rObj.predictedDuration
 	if updatedPredicted >= waitTime {
-		t.Fatal("predictedDuration should be decreased, but it is not")
+		t.Fatalf("predictedDuration should be decreased, but it is not: was %v, now %v", waitTime, updatedPredicted)
 	}
 
 	connID = addRequest(rObj, t)
@@ -120,7 +120,7 @@ func TestEndrequestWith504(t *testing.T) {
 
 func TestServeRequestReturnNoError(t *testing.T) {
 	rObj := RatelimitHandler(2, 1, time.Duration(2*time.Second))
-	connID, err := rObj.ServeRequest(true)
+	connID, err := rObj.ServeRequest()
 	if err != nil {
 		t.Fatalf("error is not expected: %v", err)
 	}
@@ -136,13 +136,13 @@ func TestServeRequestReturnNoError(t *testing.T) {
 
 func TestServeRequestReturnError(t *testing.T) {
 	rObj := RatelimitHandler(2, 1, time.Duration(100*time.Millisecond))
-	if _, err := rObj.ServeRequest(true); err != nil {
+	if _, err := rObj.ServeRequest(); err != nil {
 		t.Fatalf("we got an unexpected error: %v", err)
 	}
-	if _, err := rObj.ServeRequest(true); err != nil {
+	if _, err := rObj.ServeRequest(); err != nil {
 		t.Fatalf("we got an unexpected error: %v", err)
 	}
-	if _, err := rObj.ServeRequest(true); err == nil {
+	if _, err := rObj.ServeRequest(); err == nil {
 		t.Fatalf("we got an unexpected error: %v", err)
 	}
 }

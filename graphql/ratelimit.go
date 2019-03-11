@@ -21,7 +21,7 @@ const (
 // RatelimitObject represents structure of ratelimit object
 type RatelimitObject struct {
 	// requestsBucket a list of all simultaneous requests
-	requestsBucket []activeRequest
+	requestsBucket map[uuid.UUID]activeRequest
 	// maxRequests the max possible amount of simultaneous requests that will
 	// have service
 	maxRequests int
@@ -45,7 +45,6 @@ type RatelimitObject struct {
 // stores id, count of simultaneous requests on moment of starting request,
 // date of request start and predicted request duration
 type activeRequest struct {
-	id          uuid.UUID
 	bucketLevel int
 	startedAt   time.Time
 	predictedAt time.Time
@@ -71,7 +70,7 @@ func RatelimitHandler(maxRequests int, minRequests int, waitTime time.Duration) 
 
 // initiate helps initialize ratelimitObject with default values
 func (rObj *RatelimitObject) initiate() *RatelimitObject {
-	rObj.mux.Lock()
+	rObj.requestsBucket = make(map[uuid.UUID]activeRequest)
 	if rObj.waitTime == 0 {
 		rObj.waitTime = waitTimeDefault
 	}
@@ -85,7 +84,6 @@ func (rObj *RatelimitObject) initiate() *RatelimitObject {
 	if rObj.minRequests == 0 {
 		rObj.minRequests = minSimultaneousRequestsDefault
 	}
-	rObj.mux.Unlock()
 	return rObj
 }
 
@@ -93,30 +91,34 @@ func (rObj *RatelimitObject) initiate() *RatelimitObject {
 // served
 func (rObj *RatelimitObject) newRequest() (uuid.UUID, error) {
 	connID := uuid.NewV4()
-	predictedAt := time.Now().Add(rObj.predictedDuration)
 	rObj.mux.Lock()
-	rObj.requestsBucket = append(rObj.requestsBucket, activeRequest{
-		id:          connID,
+	predictedAt := time.Now().Add(rObj.predictedDuration)
+	rObj.requestsBucket[connID] = activeRequest{
 		bucketLevel: len(rObj.requestsBucket) + 1,
 		startedAt:   time.Now(),
 		predictedAt: predictedAt,
-	})
+	}
 	rObj.mux.Unlock()
 	return connID, nil
 }
 
 // ServeRequest decides put request into work or not. If amount of simultaneous
 // requests is more than allowed (`currentMaxRequestsLevel` level), method will
-// wait for up to `httpHandler.waitTime` and repeat attempt to start request. If
+// wait for up to `RatelimitObject.waitTime` and repeat attempt to start request. If
 // request started: returns UUID of request, otherwise returns empty UUID and
 // error
-func (rObj *RatelimitObject) ServeRequest(isInitial bool) (uuid.UUID, error) {
-	if len(rObj.requestsBucket) < rObj.currentMaxRequestsLevel {
-		return rObj.newRequest()
-	}
-	if isInitial && rObj.predictedDuration <= rObj.waitTime {
-		time.Sleep(rObj.predictedDuration)
-		return rObj.ServeRequest(false)
+func (rObj *RatelimitObject) ServeRequest() (uuid.UUID, error) {
+	for i := 0; i < 2; i++ {
+		rObj.mux.Lock()
+		if len(rObj.requestsBucket) < rObj.currentMaxRequestsLevel {
+			rObj.mux.Unlock()
+			return rObj.newRequest()
+		}
+		dur := rObj.predictedDuration
+		rObj.mux.Unlock()
+		if dur <= rObj.waitTime {
+			time.Sleep(dur)
+		}
 	}
 	return uuid.Nil, NewClientError("limit is reached, please try again later")
 }
@@ -128,17 +130,11 @@ func (rObj *RatelimitObject) EndRequest(connID uuid.UUID, endState endRequestSta
 		return
 	}
 	rObj.mux.Lock()
-	var connection activeRequest
-	for i, conn := range rObj.requestsBucket {
-		if conn.id == connID {
-			connection = conn
-			rObj.requestsBucket = append(rObj.requestsBucket[:i], rObj.requestsBucket[i+1:]...)
-			break
-		}
-	}
+	request, ok := rObj.requestsBucket[connID]
+	delete(rObj.requestsBucket, connID)
 	// we do not want update prediction if endState == endRequestStateError or
 	// somehow connection was not found
-	if connection.id == uuid.Nil || endState == endRequestStateError {
+	if !ok || endState == endRequestStateError {
 		rObj.mux.Unlock()
 		return
 	}
@@ -146,19 +142,19 @@ func (rObj *RatelimitObject) EndRequest(connID uuid.UUID, endState endRequestSta
 	// currentMaxRequestsLevel or set it to level of simultaneous requests,
 	// which was when request has been accepted
 	if endState == endRequestStateTimedOut {
-		if connection.bucketLevel <= rObj.minRequests {
+		if request.bucketLevel <= rObj.minRequests {
 			rObj.currentMaxRequestsLevel = rObj.minRequests
-		} else if connection.bucketLevel > rObj.currentMaxRequestsLevel {
+		} else if request.bucketLevel > rObj.currentMaxRequestsLevel {
 			rObj.currentMaxRequestsLevel--
 		} else {
-			rObj.currentMaxRequestsLevel = connection.bucketLevel
+			rObj.currentMaxRequestsLevel = request.bucketLevel
 		}
 	} else if rObj.currentMaxRequestsLevel < rObj.maxRequests {
 		// if endState is OK, we would like increment amount of
 		// currentMaxRequestsLevel
 		rObj.currentMaxRequestsLevel++
 	}
-	elapsedTime := time.Since(connection.startedAt)
+	elapsedTime := time.Since(request.startedAt)
 	// if real request time is longer than expected we will update prediction to
 	// the real request time
 	if elapsedTime >= rObj.predictedDuration {

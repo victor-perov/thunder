@@ -103,7 +103,7 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	connID, err := h.ratelimit.ServeRequest(true)
+	connID, err := h.ratelimit.ServeRequest()
 	if err != nil {
 		writeResponse(nil, err, nil, uuid.Nil)
 		return
