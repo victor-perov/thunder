@@ -130,7 +130,7 @@ func NewError(code string, format string, a ...interface{}) error {
 }
 
 func NewClientError(format string, a ...interface{}) error {
-	return ClientError{message: fmt.Sprintf(format, a...)}
+	return ClientError{message: fmt.Sprintf(format, a...), code: "MALFORMED_QUERY"}
 }
 
 func NewSafeError(format string, a ...interface{}) error {
