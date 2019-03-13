@@ -7,6 +7,8 @@ import (
 type ComputationInput struct {
 	Id                   string
 	Query                string
+	RequestsCount        int
+	RequestsLimit        int
 	ParsedQuery          *Query
 	Variables            map[string]interface{}
 	Ctx                  context.Context
