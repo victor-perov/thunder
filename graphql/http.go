@@ -5,27 +5,24 @@ import (
 	"encoding/json"
 	"net/http"
 	"sync"
-	"time"
 
 	"github.com/samsarahq/thunder/batch"
 	"github.com/samsarahq/thunder/reactive"
 )
 
-// HTTPHandler creates an http.Handler object with middlewares
 func HTTPHandler(schema *Schema, middlewares ...MiddlewareFunc) http.Handler {
 	return &httpHandler{
 		schema:      schema,
-		ratelimit:   RatelimitHandlerDefault(),
 		middlewares: middlewares,
 	}
 }
 
-// HTTPHandlerWithHooks works as HTTPHandler but in addition provides passing
-// errorHandler func which will catch errors happened outside middleware
-func HTTPHandlerWithHooks(schema *Schema, maxRequests int, minRequests int, waitTime time.Duration, errorHandler outsideMiddlewareErrorHandlerFunc, successfulResponseHook responseHook, middlewares ...MiddlewareFunc) http.Handler {
+// HTTPHandlerWithErrorHandling works as HTTPHandler
+// but in addition provides passing errorHandler func
+// which will catch errors happened outside middleware
+func HTTPHandlerWithHooks(schema *Schema, errorHandler outsideMiddlewareErrorHandlerFunc, successfulResponseHook responseHook, middlewares ...MiddlewareFunc) http.Handler {
 	return &httpHandler{
 		schema:                 schema,
-		ratelimit:              RatelimitHandler(maxRequests, minRequests, waitTime),
 		errorHandler:           errorHandler,
 		middlewares:            middlewares,
 		successfulResponseHook: successfulResponseHook,
@@ -34,7 +31,6 @@ func HTTPHandlerWithHooks(schema *Schema, maxRequests int, minRequests int, wait
 
 type httpHandler struct {
 	schema                 *Schema
-	ratelimit              *RatelimitObject
 	errorHandler           outsideMiddlewareErrorHandlerFunc
 	successfulResponseHook responseHook
 	middlewares            []MiddlewareFunc
@@ -51,11 +47,9 @@ type httpResponse struct {
 }
 
 func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	writeResponse := func(value interface{}, err error, query *string, req *ActiveRequest) {
+	writeResponse := func(value interface{}, err error, query *string) {
 		response := httpResponse{}
-		endStateValue := endRequestStateOK
 		if err != nil {
-			endStateValue = endRequestStateError
 			if h.errorHandler != nil {
 				h.errorHandler(flattenError(err, 0), query)
 			}
@@ -64,7 +58,6 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			response.Data = value
 		}
 
-		h.ratelimit.EndRequest(req, endStateValue)
 		responseJSON, err := json.Marshal(response)
 		if err != nil {
 			if h.errorHandler != nil {
@@ -84,12 +77,12 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method != "POST" {
-		writeResponse(nil, NewClientError("request must be a POST"), nil, nil)
+		writeResponse(nil, NewClientError("request must be a POST"), nil)
 		return
 	}
 
 	if r.Body == nil {
-		writeResponse(nil, NewClientError("request must include a query"), nil, nil)
+		writeResponse(nil, NewClientError("request must include a query"), nil)
 		return
 	}
 
@@ -98,19 +91,13 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if h.errorHandler != nil {
 			h.errorHandler(err, nil)
 		}
-		writeResponse(nil, NewClientError("request must have a valid JSON structure"), nil, nil)
-		return
-	}
-
-	req, err := h.ratelimit.ServeRequest(true)
-	if err != nil {
-		writeResponse(nil, err, nil, nil)
+		writeResponse(nil, NewClientError("request must have a valid JSON structure"), nil)
 		return
 	}
 
 	query, err := Parse(params.Query, params.Variables)
 	if err != nil {
-		writeResponse(nil, err, &params.Query, req)
+		writeResponse(nil, err, &params.Query)
 		return
 	}
 
@@ -119,7 +106,7 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		schema = h.schema.Mutation
 	}
 	if err := PrepareQuery(schema, query.SelectionSet); err != nil {
-		writeResponse(nil, err, &params.Query, req)
+		writeResponse(nil, err, &params.Query)
 		return
 	}
 
@@ -141,27 +128,21 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		})
 
 		output := RunMiddlewares(middlewares, &ComputationInput{
-			Ctx:           ctx,
-			RequestsCount: h.ratelimit.GetSimultaneousRequestsCount(),
-			RequestsLimit: h.ratelimit.GetActualRequestsLimit(),
-			ParsedQuery:   query,
-			Query:         params.Query,
-			Variables:     params.Variables,
+			Ctx:         ctx,
+			ParsedQuery: query,
+			Query:       params.Query,
+			Variables:   params.Variables,
 		})
 		current, err := output.Current, output.Error
 
 		if err != nil {
 			if ErrorCause(err) != context.Canceled {
-				writeResponse(nil, err, &params.Query, req)
-			} else {
-				// we would like to end request and free from the list of
-				// simultaneous requests
-				h.ratelimit.EndRequest(req, endRequestStateCanceled)
+				writeResponse(nil, err, &params.Query)
 			}
 			return nil, err
 		}
 
-		writeResponse(current, nil, nil, req)
+		writeResponse(current, nil, nil)
 		return nil, nil
 	}, DefaultMinRerunInterval)
 
