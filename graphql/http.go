@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/samsarahq/thunder/batch"
 	"github.com/samsarahq/thunder/reactive"
@@ -21,20 +22,18 @@ func HTTPHandler(schema *Schema, middlewares ...MiddlewareFunc) http.Handler {
 // HTTPHandlerWithHooks works as HTTPHandler
 // but in addition provides passing errorHandler func
 // which will catch errors happened outside middleware
-func HTTPHandlerWithHooks(schema *Schema, errorHandler errorFunc, successfulHandler successfulResponseFunc, middlewares ...MiddlewareFunc) http.Handler {
+func HTTPHandlerWithHooks(schema *Schema, finalHandler finalResponseFunc, middlewares ...MiddlewareFunc) http.Handler {
 	return &httpHandler{
-		schema:            schema,
-		errorHandler:      errorHandler,
-		middlewares:       middlewares,
-		successfulHandler: successfulHandler,
+		schema:       schema,
+		middlewares:  middlewares,
+		finalHandler: finalHandler,
 	}
 }
 
 type httpHandler struct {
-	schema            *Schema
-	errorHandler      errorFunc
-	successfulHandler successfulResponseFunc
-	middlewares       []MiddlewareFunc
+	schema       *Schema
+	finalHandler finalResponseFunc
+	middlewares  []MiddlewareFunc
 }
 
 type httpPostBody struct {
@@ -47,34 +46,49 @@ type httpResponse struct {
 	Errors interface{} `json:"errors"`
 }
 
+// SendError provides sending error message in GraphQL format. It useful in
+// cases when error could be happen outside main logic for serving HTTP
+// requests. The error message has the same pattern as original GraphQL response
+// with HTTP 200 status code. Returns an error, that could be happened during
+// sending data to client
+func SendError(w http.ResponseWriter, message string) error {
+	w.Header().Set("Content-Type", "application/json")
+	_, err := fmt.Fprintf(w, `{"data":null,"errors":[{"message":"%s","path":null,"extensions":{"timestamp":"%s"}}]}`, message, time.Now().UTC())
+	return err
+}
+
 func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	writeResponse := func(value interface{}, err error, query *string) {
+		var errors []error
+		var responseJSON []byte
+
+		defer h.finalHandler(len(responseJSON), errors, query)
+
 		response := httpResponse{}
 		if err != nil {
-			if h.errorHandler != nil {
-				h.errorHandler(flattenError(err, 0), query)
-			}
+			errors = append(errors, err)
 			response.Errors = []interface{}{newGraphQLError(err)}
 		} else {
 			response.Data = value
 		}
 
-		responseJSON, err := json.Marshal(response)
+		responseJSON, err = json.Marshal(response)
 		if err != nil {
-			if h.errorHandler != nil {
-				h.errorHandler(err, query)
+			errors = append(errors, err)
+			err = SendError(w, newGraphQLError(err).Message)
+			if err != nil {
+				errors = append(errors, err)
 			}
-			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		if w.Header().Get("Content-Type") == "" {
 			w.Header().Set("Content-Type", "application/json")
 		}
 
-		if h.successfulHandler != nil && response.Errors == nil {
-			h.successfulHandler(responseJSON)
+		_, err = w.Write(responseJSON)
+		if err != nil {
+			errors = append(errors, err)
 		}
-		w.Write(responseJSON)
 	}
 
 	if r.Method != "POST" {

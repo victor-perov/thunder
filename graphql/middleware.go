@@ -21,13 +21,9 @@ type ComputationOutput struct {
 	Error    error
 }
 
-// errorFunc type describes function that will be executed in case if error
-// happens outside processing of MiddlewareFunc
-type errorFunc func(err error, query *string)
-
-// successfulResponseFunc describes function that will be fired before sending
-// successful, non-errored response
-type successfulResponseFunc func(response []byte)
+// finalResponseFunc describes function that will be fired after sending
+// response from writeResponse func
+type finalResponseFunc func(responseLength int, errors []error, query *string)
 type MiddlewareFunc func(input *ComputationInput, next MiddlewareNextFunc) *ComputationOutput
 type MiddlewareNextFunc func(input *ComputationInput) *ComputationOutput
 
