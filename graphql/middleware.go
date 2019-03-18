@@ -21,10 +21,13 @@ type ComputationOutput struct {
 	Error    error
 }
 
-// outsideMiddlewareErrorHandlerFunc type describes function
-// that will be executed in case if error happens outside processing of MiddlewareFunc
-type outsideMiddlewareErrorHandlerFunc func(err error, query *string)
-type responseHook func(response []byte)
+// errorFunc type describes function that will be executed in case if error
+// happens outside processing of MiddlewareFunc
+type errorFunc func(err error, query *string)
+
+// successfulResponseFunc describes function that will be fired before sending
+// successful, non-errored response
+type successfulResponseFunc func(response []byte)
 type MiddlewareFunc func(input *ComputationInput, next MiddlewareNextFunc) *ComputationOutput
 type MiddlewareNextFunc func(input *ComputationInput) *ComputationOutput
 

@@ -3,6 +3,7 @@ package graphql
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sync"
 
@@ -17,23 +18,23 @@ func HTTPHandler(schema *Schema, middlewares ...MiddlewareFunc) http.Handler {
 	}
 }
 
-// HTTPHandlerWithErrorHandling works as HTTPHandler
+// HTTPHandlerWithHooks works as HTTPHandler
 // but in addition provides passing errorHandler func
 // which will catch errors happened outside middleware
-func HTTPHandlerWithHooks(schema *Schema, errorHandler outsideMiddlewareErrorHandlerFunc, successfulResponseHook responseHook, middlewares ...MiddlewareFunc) http.Handler {
+func HTTPHandlerWithHooks(schema *Schema, errorHandler errorFunc, successfulHandler successfulResponseFunc, middlewares ...MiddlewareFunc) http.Handler {
 	return &httpHandler{
-		schema:                 schema,
-		errorHandler:           errorHandler,
-		middlewares:            middlewares,
-		successfulResponseHook: successfulResponseHook,
+		schema:            schema,
+		errorHandler:      errorHandler,
+		middlewares:       middlewares,
+		successfulHandler: successfulHandler,
 	}
 }
 
 type httpHandler struct {
-	schema                 *Schema
-	errorHandler           outsideMiddlewareErrorHandlerFunc
-	successfulResponseHook responseHook
-	middlewares            []MiddlewareFunc
+	schema            *Schema
+	errorHandler      errorFunc
+	successfulHandler successfulResponseFunc
+	middlewares       []MiddlewareFunc
 }
 
 type httpPostBody struct {
@@ -70,8 +71,8 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 		}
 
-		if h.successfulResponseHook != nil && response.Errors == nil {
-			h.successfulResponseHook(responseJSON)
+		if h.successfulHandler != nil && response.Errors == nil {
+			h.successfulHandler(responseJSON)
 		}
 		w.Write(responseJSON)
 	}
@@ -88,10 +89,7 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var params httpPostBody
 	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
-		if h.errorHandler != nil {
-			h.errorHandler(err, nil)
-		}
-		writeResponse(nil, NewClientError("request must have a valid JSON structure"), nil)
+		writeResponse(nil, NewClientError(fmt.Sprintf("failed to recognize JSON request: '%s'", err.Error())), nil)
 		return
 	}
 
