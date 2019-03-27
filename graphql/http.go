@@ -62,8 +62,6 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var errors []error
 		var responseJSON []byte
 
-		defer h.finalHandler(len(responseJSON), errors, query)
-
 		response := httpResponse{}
 		if err != nil {
 			errors = append(errors, err)
@@ -79,6 +77,7 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				errors = append(errors, err)
 			}
+			h.finalHandler(len(responseJSON), errors, query)
 			return
 		}
 		if w.Header().Get("Content-Type") == "" {
@@ -89,6 +88,7 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			errors = append(errors, err)
 		}
+		h.finalHandler(len(responseJSON), errors, query)
 	}
 
 	if r.Method != "POST" {
