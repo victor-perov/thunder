@@ -13,9 +13,14 @@ import (
 )
 
 func HTTPHandler(schema *Schema, middlewares ...MiddlewareFunc) http.Handler {
+	return HTTPHandlerWithExecutor(schema, (NewExecutor(NewImmediateGoroutineScheduler())), middlewares...)
+}
+
+func HTTPHandlerWithExecutor(schema *Schema, executor ExecutorRunner, middlewares ...MiddlewareFunc) http.Handler {
 	return &httpHandler{
 		schema:      schema,
 		middlewares: middlewares,
+		executor:    executor,
 	}
 }
 
@@ -25,6 +30,7 @@ func HTTPHandler(schema *Schema, middlewares ...MiddlewareFunc) http.Handler {
 func HTTPHandlerWithHooks(schema *Schema, finalHandler finalResponseFunc, middlewares ...MiddlewareFunc) http.Handler {
 	return &httpHandler{
 		schema:       schema,
+		executor:     (NewExecutor(NewImmediateGoroutineScheduler())),
 		middlewares:  middlewares,
 		finalHandler: finalHandler,
 	}
@@ -34,6 +40,7 @@ type httpHandler struct {
 	schema       *Schema
 	finalHandler finalResponseFunc
 	middlewares  []MiddlewareFunc
+	executor     ExecutorRunner
 }
 
 type httpPostBody struct {
@@ -77,7 +84,9 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				errors = append(errors, err)
 			}
-			h.finalHandler(len(responseJSON), errors, query)
+			if h.finalHandler != nil {
+				h.finalHandler(len(responseJSON), errors, query)
+			}
 			return
 		}
 		if w.Header().Get("Content-Type") == "" {
@@ -88,7 +97,9 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			errors = append(errors, err)
 		}
-		h.finalHandler(len(responseJSON), errors, query)
+		if h.finalHandler != nil {
+			h.finalHandler(len(responseJSON), errors, query)
+		}
 	}
 
 	if r.Method != "POST" {
@@ -117,13 +128,13 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if query.Kind == "mutation" {
 		schema = h.schema.Mutation
 	}
-	if err := PrepareQuery(schema, query.SelectionSet); err != nil {
+	if err := PrepareQuery(r.Context(), schema, query.SelectionSet); err != nil {
 		writeResponse(nil, err, &params.Query)
 		return
 	}
 
 	var wg sync.WaitGroup
-	e := Executor{}
+	e := h.executor
 
 	wg.Add(1)
 	runner := reactive.NewRerunner(r.Context(), func(ctx context.Context) (interface{}, error) {
@@ -156,7 +167,7 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		writeResponse(current, nil, nil)
 		return nil, nil
-	}, DefaultMinRerunInterval)
+	}, DefaultMinRerunInterval, false)
 
 	wg.Wait()
 	runner.Stop()

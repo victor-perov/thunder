@@ -20,8 +20,8 @@ func (d DBConfig) String() string {
 var DefaultDBConfig = DBConfig{
 	Username: "root",
 	Password: "dev",
-	Hostname: "localhost",
-	Port:     3307,
+	Hostname: "mysql",
+	Port:     3306,
 }
 
 type TestDatabase struct {

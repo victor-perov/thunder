@@ -1,13 +1,20 @@
-version: '2'
+version: "2.2"
 
 services:
   mysql:
     image: mysql:5.6
     volumes:
       - ./binlog.cnf:/etc/mysql/conf.d/binlog.cnf
-    ports:
-      - "3307:3306"
     environment:
       MYSQL_ROOT_PASSWORD: "dev"
       MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
 
+  go:
+    image: golang:1.12
+    volumes:
+      - ./../:/data
+    working_dir: /data
+    depends_on:
+      mysql:
+        condition: service_started
+    command: go test ./... -count 1

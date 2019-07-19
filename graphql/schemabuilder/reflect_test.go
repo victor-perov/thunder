@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samsarahq/thunder/batch"
 	"github.com/samsarahq/thunder/graphql"
 	"github.com/samsarahq/thunder/internal"
 	"github.com/stretchr/testify/assert"
@@ -162,11 +163,11 @@ func TestExecuteGood(t *testing.T) {
 		}
 	`, map[string]interface{}{"var": float64(3)})
 
-	if err := graphql.PrepareQuery(builtSchema.Query, q.SelectionSet); err != nil {
+	if err := graphql.PrepareQuery(ctx, builtSchema.Query, q.SelectionSet); err != nil {
 		t.Error(err)
 	}
 
-	e := graphql.Executor{}
+	e := graphql.NewExecutor(graphql.NewImmediateGoroutineScheduler())
 
 	result, err := e.Execute(ctx, builtSchema.Query, nil, q)
 	if err != nil {
@@ -301,11 +302,11 @@ func TestExecuteErrorNullReturn(t *testing.T) {
 		}
 	`, map[string]interface{}{"var": float64(3)})
 
-	if err := graphql.PrepareQuery(builtSchema.Query, q.SelectionSet); err != nil {
+	if err := graphql.PrepareQuery(context.Background(), builtSchema.Query, q.SelectionSet); err != nil {
 		t.Error(err)
 	}
 
-	e := graphql.Executor{}
+	e := graphql.NewExecutor(graphql.NewImmediateGoroutineScheduler())
 	_, err := e.Execute(context.Background(), builtSchema.Query, nil, q)
 	if err == nil {
 		t.Error("expected error, but received nil")
@@ -331,11 +332,11 @@ func TestExecuteErrorBasic(t *testing.T) {
 		}
 	`, map[string]interface{}{"var": float64(3)})
 
-	if err := graphql.PrepareQuery(builtSchema.Query, q.SelectionSet); err != nil {
+	if err := graphql.PrepareQuery(context.Background(), builtSchema.Query, q.SelectionSet); err != nil {
 		t.Error(err)
 	}
 
-	e := graphql.Executor{}
+	e := graphql.NewExecutor(graphql.NewImmediateGoroutineScheduler())
 	_, err := e.Execute(context.Background(), builtSchema.Query, nil, q)
 	if err == nil {
 		t.Error("expected error, but received nil")
@@ -676,4 +677,205 @@ func TestObjectKeyMustBeScalar(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
+}
+
+func TestBatchFieldFuncValidation(t *testing.T) {
+	type Object struct {
+		Key *string
+	}
+	tests := []struct {
+		name                 string
+		resolverFunc         interface{}
+		resolverFallbackFunc interface{}
+		wantError            bool
+	}{
+		{
+			name:                 "nothing",
+			resolverFunc:         func() {},
+			resolverFallbackFunc: func() {},
+			wantError:            true,
+		},
+		{
+			name:                 "no source",
+			resolverFunc:         func(ctx context.Context) {},
+			resolverFallbackFunc: func(ctx context.Context) {},
+			wantError:            true,
+		},
+		{
+			name:                 "non-batch source",
+			resolverFunc:         func(ctx context.Context, o *Object) {},
+			resolverFallbackFunc: func(ctx context.Context, o *Object) {},
+			wantError:            true,
+		},
+		{
+			name:                 "batch source",
+			resolverFunc:         func(ctx context.Context, o map[batch.Index]*Object) {},
+			resolverFallbackFunc: func(ctx context.Context, o *Object) {},
+			wantError:            false,
+		},
+		{
+			name:                 "batch & fallback funcs inverted",
+			resolverFallbackFunc: func(ctx context.Context, o map[batch.Index]*Object) {},
+			resolverFunc:         func(ctx context.Context, o *Object) {},
+			wantError:            true,
+		},
+		{
+			name:                 "batch source with different fallback",
+			resolverFunc:         func(ctx context.Context, o map[batch.Index]*Object) {},
+			resolverFallbackFunc: func(ctx context.Context) {},
+			wantError:            true,
+		},
+		{
+			name:                 "batch non-pointer source",
+			resolverFunc:         func(ctx context.Context, o map[batch.Index]Object) {},
+			resolverFallbackFunc: func(ctx context.Context, o Object) {},
+			wantError:            false,
+		},
+		{
+			name:                 "batch invalid map key source",
+			resolverFunc:         func(ctx context.Context, o map[int64]Object) {},
+			resolverFallbackFunc: func(ctx context.Context, o Object) {},
+			wantError:            true,
+		},
+		{
+			name:                 "batch with args",
+			resolverFunc:         func(ctx context.Context, o map[batch.Index]Object, args struct{ Test string }) {},
+			resolverFallbackFunc: func(ctx context.Context, o Object, args struct{ Test string }) {},
+			wantError:            false,
+		},
+		{
+			name:                 "batch with different fallback args",
+			resolverFunc:         func(ctx context.Context, o map[batch.Index]Object, args struct{ Test string }) {},
+			resolverFallbackFunc: func(ctx context.Context, o Object, args struct{ Test2 string }) {},
+			wantError:            true,
+		},
+		{
+			name:                 "batch with no fallback args",
+			resolverFunc:         func(ctx context.Context, o map[batch.Index]Object, args struct{ Test string }) {},
+			resolverFallbackFunc: func(ctx context.Context, o Object) {},
+			wantError:            true,
+		},
+		{
+			name:                 "batch with no args, fallback has args",
+			resolverFunc:         func(ctx context.Context, o map[batch.Index]Object) {},
+			resolverFallbackFunc: func(ctx context.Context, o Object, args struct{ Test string }) {},
+			wantError:            true,
+		},
+		{
+			name:                 "batch with selection set",
+			resolverFunc:         func(ctx context.Context, o map[batch.Index]Object, s *graphql.SelectionSet) {},
+			resolverFallbackFunc: func(ctx context.Context, o Object, s *graphql.SelectionSet) {},
+			wantError:            false,
+		},
+		{
+			name:                 "batch with selection set, fallback without Set",
+			resolverFunc:         func(ctx context.Context, o map[batch.Index]Object, s *graphql.SelectionSet) {},
+			resolverFallbackFunc: func(ctx context.Context, o Object) {},
+			wantError:            true,
+		},
+		{
+			name: "batch with all parameters",
+			resolverFunc: func(ctx context.Context, o map[batch.Index]Object, args struct{ Test string }, s *graphql.SelectionSet) {
+			},
+			resolverFallbackFunc: func(ctx context.Context, o Object, args struct{ Test string }, s *graphql.SelectionSet) {},
+			wantError:            false,
+		},
+		{
+			name: "batch with all extra parameters",
+			resolverFunc: func(ctx context.Context, o map[batch.Index]Object, args struct{ Test string }, s *graphql.SelectionSet, bad string) {
+			},
+			resolverFallbackFunc: func(ctx context.Context, o Object, args struct{ Test string }, s *graphql.SelectionSet) {},
+			wantError:            true,
+		},
+		{
+			name:                 "batch without context",
+			resolverFunc:         func(o map[batch.Index]Object, args struct{ Test string }, s *graphql.SelectionSet) {},
+			resolverFallbackFunc: func(o Object, args struct{ Test string }, s *graphql.SelectionSet) {},
+			wantError:            false,
+		},
+		{
+			name:                 "batch without context, fallback with context",
+			resolverFunc:         func(o map[batch.Index]Object, args struct{ Test string }, s *graphql.SelectionSet) {},
+			resolverFallbackFunc: func(ctx context.Context, o Object, args struct{ Test string }, s *graphql.SelectionSet) {},
+			wantError:            true,
+		},
+		{
+			name:                 "batch invalid response type",
+			resolverFunc:         func(ctx context.Context, o map[batch.Index]Object) *string { return nil },
+			resolverFallbackFunc: func(ctx context.Context, o Object) *string { return nil },
+			wantError:            true,
+		},
+		{
+			name:                 "batch only error",
+			resolverFunc:         func(ctx context.Context, o map[batch.Index]Object) error { return nil },
+			resolverFallbackFunc: func(ctx context.Context, o Object) error { return nil },
+			wantError:            false,
+		},
+		{
+			name:                 "batch invalid response map error",
+			resolverFunc:         func(ctx context.Context, o map[batch.Index]Object) (map[string]string, error) { return nil, nil },
+			resolverFallbackFunc: func(ctx context.Context, o Object) (string, error) { return "", nil },
+			wantError:            true,
+		},
+		{
+			name:                 "batch valid resp and error",
+			resolverFunc:         func(ctx context.Context, o map[batch.Index]Object) (map[batch.Index]string, error) { return nil, nil },
+			resolverFallbackFunc: func(ctx context.Context, o Object) (*string, error) { return nil, nil },
+			wantError:            false,
+		},
+		{
+			name:                 "batch resp different from fallback",
+			resolverFunc:         func(ctx context.Context, o map[batch.Index]Object) (map[batch.Index]string, error) { return nil, nil },
+			resolverFallbackFunc: func(ctx context.Context, o Object) (int, error) { return 1, nil },
+			wantError:            true,
+		},
+		{
+			name:                 "batch valid resp",
+			resolverFunc:         func(ctx context.Context, o map[batch.Index]Object) map[batch.Index]string { return nil },
+			resolverFallbackFunc: func(ctx context.Context, o Object) *string { return nil },
+			wantError:            false,
+		},
+		{
+			name: "batch to many response fields",
+			resolverFunc: func(ctx context.Context, o map[batch.Index]Object) (map[batch.Index]string, error, bool) {
+				return nil, nil, false
+			},
+			resolverFallbackFunc: func(ctx context.Context, o Object) (*string, error) { return nil, nil },
+			wantError:            true,
+		},
+		{
+			name:                 "batch.Index usage",
+			resolverFunc:         func(ctx context.Context, o map[batch.Index]Object) (map[batch.Index]string, error) { return nil, nil },
+			resolverFallbackFunc: func(ctx context.Context, o Object) (*string, error) { return nil, nil },
+			wantError:            false,
+		},
+		{
+			name:                 "map[int] on resp",
+			resolverFunc:         func(ctx context.Context, o map[batch.Index]Object) (map[int]*string, error) { return nil, nil },
+			resolverFallbackFunc: func(ctx context.Context, o Object) (*string, error) { return nil, nil },
+			wantError:            true,
+		},
+		{
+			name:                 "map[int] on params",
+			resolverFunc:         func(ctx context.Context, o map[int]Object) (map[batch.Index]*string, error) { return nil, nil },
+			resolverFallbackFunc: func(ctx context.Context, o Object) (*string, error) { return nil, nil },
+			wantError:            true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			builder := NewSchema()
+			builder.Query().FieldFunc("objects", func(ctx context.Context) []*Object { return []*Object(nil) })
+
+			obj := builder.Object("object", Object{})
+			obj.Key("key")
+			obj.BatchFieldFuncWithFallback("keys", tt.resolverFunc, tt.resolverFallbackFunc, func(ctx context.Context) bool { return true })
+			_, err := builder.Build()
+			if tt.wantError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }

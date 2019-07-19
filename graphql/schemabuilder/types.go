@@ -1,6 +1,9 @@
 package schemabuilder
 
-import "reflect"
+import (
+	"context"
+	"reflect"
+)
 
 // A Object represents a Go type and set of methods to be converted into an
 // Object in a GraphQL schema.
@@ -41,10 +44,68 @@ var Paginated fieldFuncOptionFunc = func(m *method) {
 	m.Paginated = true
 }
 
-type TextFilterFields map[string]interface{}
+type Filter struct {
+	Name            string
+	FilterFunc      interface{}
+	BatchFilterFunc interface{}
+	FallbackFlag    func(context.Context) bool
+	Options         []FieldFuncOption
+}
 
-func (s TextFilterFields) apply(m *method) {
-	m.TextFilterFuncs = s
+func FilterField(name string, filter interface{}, options ...FieldFuncOption) FieldFuncOption {
+	var filterStruct = Filter{
+		Name:       name,
+		FilterFunc: filter,
+		Options:    options,
+	}
+	var fieldFuncTextFilterFields fieldFuncOptionFunc = func(m *method) {
+		if m.TextFilterFuncs == nil {
+			m.TextFilterFuncs = map[string]Filter{}
+		}
+		if filter, ok := m.TextFilterFuncs[name]; ok {
+			panic("Batch Field Filters have the same name: " + filter.Name)
+		}
+		m.TextFilterFuncs[name] = filterStruct
+	}
+	return fieldFuncTextFilterFields
+}
+
+func BatchFilterField(name string, batchFilter interface{}, options ...FieldFuncOption) FieldFuncOption {
+	var filterStruct = Filter{
+		Name:            name,
+		BatchFilterFunc: batchFilter,
+		Options:         options,
+	}
+	var fieldFuncTextFilterFields fieldFuncOptionFunc = func(m *method) {
+		if m.TextFilterFuncs == nil {
+			m.TextFilterFuncs = map[string]Filter{}
+		}
+		if filter, ok := m.TextFilterFuncs[name]; ok {
+			panic("Batch Field Filters have the same name: " + filter.Name)
+		}
+		m.TextFilterFuncs[name] = filterStruct
+	}
+	return fieldFuncTextFilterFields
+}
+
+func BatchFilterFieldWithFallback(name string, batchFilter interface{}, filter interface{}, flag func(context.Context) bool, options ...FieldFuncOption) FieldFuncOption {
+	var filterStruct = Filter{
+		Name:            name,
+		FilterFunc:      filter,
+		BatchFilterFunc: batchFilter,
+		FallbackFlag:    flag,
+		Options:         options,
+	}
+	var fieldFuncTextFilterFields fieldFuncOptionFunc = func(m *method) {
+		if m.TextFilterFuncs == nil {
+			m.TextFilterFuncs = map[string]Filter{}
+		}
+		if filter, ok := m.TextFilterFuncs[name]; ok {
+			panic("Batch Field Filters have the same name: " + filter.Name)
+		}
+		m.TextFilterFuncs[name] = filterStruct
+	}
+	return fieldFuncTextFilterFields
 }
 
 type SortFields map[string]interface{}
@@ -87,6 +148,48 @@ func (s *Object) FieldFunc(name string, f interface{}, options ...FieldFuncOptio
 	s.Methods[name] = m
 }
 
+func (s *Object) BatchFieldFunc(name string, batchFunc interface{}, options ...FieldFuncOption) {
+	if s.Methods == nil {
+		s.Methods = make(Methods)
+	}
+
+	m := &method{
+		Fn:    batchFunc,
+		Batch: true,
+	}
+	for _, opt := range options {
+		opt.apply(m)
+	}
+
+	if _, ok := s.Methods[name]; ok {
+		panic("duplicate method")
+	}
+	s.Methods[name] = m
+}
+
+func (s *Object) BatchFieldFuncWithFallback(name string, batchFunc interface{}, fallbackFunc interface{}, flag UseFallbackFlag, options ...FieldFuncOption) {
+	if s.Methods == nil {
+		s.Methods = make(Methods)
+	}
+
+	m := &method{
+		Fn: batchFunc,
+		BatchArgs: batchArgs{
+			FallbackFunc:          fallbackFunc,
+			ShouldUseFallbackFunc: flag,
+		},
+		Batch: true,
+	}
+	for _, opt := range options {
+		opt.apply(m)
+	}
+
+	if _, ok := s.Methods[name]; ok {
+		panic("duplicate method")
+	}
+	s.Methods[name] = m
+}
+
 // Key registers the key field on an object. The field should be specified by the name of the
 // graphql field.
 // For example, for an object User:
@@ -105,10 +208,24 @@ type method struct {
 
 	// Whether or not the FieldFunc is paginated.
 	Paginated bool
+
 	// Text filter methods
-	TextFilterFuncs map[string]interface{}
+	TextFilterFuncs map[string]Filter
+
 	// Sort methods
 	SortFuncs map[string]interface{}
+
+	// Whether the FieldFunc is a batchField
+	Batch bool
+
+	BatchArgs batchArgs
+}
+
+type UseFallbackFlag func(context.Context) bool
+
+type batchArgs struct {
+	FallbackFunc          interface{}
+	ShouldUseFallbackFunc UseFallbackFlag
 }
 
 // A Methods map represents the set of methods exposed on a Object.

@@ -71,13 +71,13 @@ func (sb *schemaBuilder) buildStruct(typ reflect.Type) error {
 		}
 		object.Fields[fieldInfo.Name] = built
 		if fieldInfo.KeyField {
-			if object.Key != nil {
+			if object.KeyField != nil {
 				return fmt.Errorf("bad type %s: multiple key fields", typ)
 			}
 			if !isScalarType(built.Type) {
 				return fmt.Errorf("bad type %s: key type must be scalar, got %T", typ, built.Type)
 			}
-			object.Key = built.Resolve
+			object.KeyField = built
 		}
 	}
 
@@ -89,6 +89,23 @@ func (sb *schemaBuilder) buildStruct(typ reflect.Type) error {
 
 	for _, name := range names {
 		method := methods[name]
+
+		if method.Batch {
+			if method.BatchArgs.FallbackFunc != nil {
+				batchField, err := sb.buildBatchFunctionWithFallback(typ, method)
+				if err != nil {
+					return err
+				}
+				object.Fields[name] = batchField
+				continue
+			}
+			batchField, err := sb.buildBatchFunction(typ, method)
+			if err != nil {
+				return err
+			}
+			object.Fields[name] = batchField
+			continue
+		}
 
 		if method.Paginated {
 			typedField, err := sb.buildPaginatedField(typ, method)
@@ -115,7 +132,7 @@ func (sb *schemaBuilder) buildStruct(typ reflect.Type) error {
 		if !isScalarType(keyPtr.Type) {
 			return fmt.Errorf("bad type %s: key type must be scalar, got %s", typ, keyPtr.Type.String())
 		}
-		object.Key = keyPtr.Resolve
+		object.KeyField = keyPtr
 	}
 
 	return nil

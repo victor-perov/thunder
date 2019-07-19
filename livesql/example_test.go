@@ -60,7 +60,7 @@ func Example() {
 		fmt.Println(user.Name)
 		ch <- struct{}{}
 		return nil, nil
-	}, 200*time.Millisecond)
+	}, 200*time.Millisecond, false)
 	defer rerunner.Stop()
 
 	<-ch
