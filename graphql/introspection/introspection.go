@@ -135,6 +135,12 @@ func (s *introspection) registerType(schema *schemabuilder.Schema) {
 			return t.Description
 		case *graphql.Union:
 			return t.Description
+		case *graphql.Scalar:
+			return t.Description
+		case *graphql.Enum:
+			return t.Description
+		case *graphql.InputObject:
+			return t.Description
 		default:
 			return ""
 		}
@@ -163,8 +169,9 @@ func (s *introspection) registerType(schema *schemabuilder.Schema) {
 		case *graphql.InputObject:
 			for name, f := range t.InputFields {
 				fields = append(fields, InputValue{
-					Name: name,
-					Type: Type{Inner: f},
+					Name:        name,
+					Description: t.Description,
+					Type:        Type{Inner: f},
 				})
 			}
 		}
@@ -191,9 +198,10 @@ func (s *introspection) registerType(schema *schemabuilder.Schema) {
 				sort.Slice(args, func(i, j int) bool { return args[i].Name < args[j].Name })
 
 				fields = append(fields, field{
-					Name: name,
-					Type: Type{Inner: f.Type},
-					Args: args,
+					Name:        name,
+					Description: f.Description,
+					Type:        Type{Inner: f.Type},
+					Args:        args,
 				})
 			}
 		}

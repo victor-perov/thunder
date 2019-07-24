@@ -65,7 +65,7 @@ func (sb *schemaBuilder) buildStruct(typ reflect.Type) error {
 			return fmt.Errorf("bad type %s: two fields named %s", typ, fieldInfo.Name)
 		}
 
-		built, err := sb.buildField(field)
+		built, err := sb.buildField(field, fieldInfo)
 		if err != nil {
 			return fmt.Errorf("bad field %s on type %s: %s", fieldInfo.Name, typ, err)
 		}
@@ -196,7 +196,7 @@ func isScalarType(typ graphql.Type) bool {
 
 // buildField generates a graphQL field for a struct's field.  This field can be
 // used to "resolve" a response for a graphql request.
-func (sb *schemaBuilder) buildField(field reflect.StructField) (*graphql.Field, error) {
+func (sb *schemaBuilder) buildField(field reflect.StructField, fieldInfo *graphQLFieldInfo) (*graphql.Field, error) {
 	retType, err := sb.getType(field.Type)
 	if err != nil {
 		return nil, err
@@ -210,6 +210,7 @@ func (sb *schemaBuilder) buildField(field reflect.StructField) (*graphql.Field, 
 			}
 			return value.FieldByIndex(field.Index).Interface(), nil
 		},
+		Description:    fieldInfo.Description,
 		Type:           retType,
 		ParseArguments: nilParseArguments,
 	}, nil

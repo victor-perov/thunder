@@ -18,8 +18,9 @@ type Type interface {
 // Scalar is a leaf value.  A custom "Unwrapper" can be attached to the scalar
 // so it can have a custom unwrapping (if nil we will use the default unwrapper).
 type Scalar struct {
-	Type      string
-	Unwrapper func(interface{}) (interface{}, error)
+	Type        string
+	Description string
+	Unwrapper   func(interface{}) (interface{}, error)
 }
 
 func (s *Scalar) isType() {}
@@ -30,9 +31,10 @@ func (s *Scalar) String() string {
 
 // Enum is a leaf value
 type Enum struct {
-	Type       string
-	Values     []string
-	ReverseMap map[interface{}]string
+	Type        string
+	Values      []string
+	Description string
+	ReverseMap  map[interface{}]string
 }
 
 func (e *Enum) isType() {}
@@ -72,6 +74,7 @@ func (l *List) String() string {
 
 type InputObject struct {
 	Name        string
+	Description string
 	InputFields map[string]Type
 }
 
@@ -121,6 +124,7 @@ type Resolver func(ctx context.Context, source, args interface{}, selectionSet *
 //
 // Fields are responsible for computing their value themselves.
 type Field struct {
+	Description    string
 	Resolve        Resolver
 	Type           Type
 	Args           map[string]Type
