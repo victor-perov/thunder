@@ -47,6 +47,8 @@ type graphQLFieldInfo struct {
 	// Name is the GraphQL field name that should be exposed for this field.
 	Name string
 
+	Description string
+
 	// KeyField indicates that this field should be treated as a Object Key field.
 	KeyField bool
 
@@ -87,7 +89,12 @@ func parseGraphQLFieldInfo(field reflect.StructField) (*graphQLFieldInfo, error)
 			}
 		}
 	}
-	return &graphQLFieldInfo{Name: name, KeyField: key, OptionalInputField: optional}, nil
+	return &graphQLFieldInfo{
+		Name:               name,
+		KeyField:           key,
+		OptionalInputField: optional,
+		Description:        field.Tag.Get("graphql-description"),
+	}, nil
 }
 
 // Common Types that we will need to perform type assertions against.

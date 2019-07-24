@@ -247,7 +247,11 @@ func (c *connectionContext) constructConnectionType(sb *schemaBuilder, typ refle
 	fieldMap := make(map[string]*graphql.Field)
 
 	countType, _ := reflect.TypeOf(Connection{}).FieldByName("TotalCount")
-	countField, err := sb.buildField(countType)
+	countInfo, err := parseGraphQLFieldInfo(countType)
+	if err != nil {
+		return nil, fmt.Errorf("bad type %s: %s", typ, countInfo.Name)
+	}
+	countField, err := sb.buildField(countType, countInfo)
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +278,11 @@ func (c *connectionContext) constructConnectionType(sb *schemaBuilder, typ refle
 	fieldMap["edges"] = edgesSliceField
 
 	pageInfoType, _ := reflect.TypeOf(Connection{}).FieldByName("PageInfo")
-	pageInfoField, err := sb.buildField(pageInfoType)
+	pageInfo, err := parseGraphQLFieldInfo(pageInfoType)
+	if err != nil {
+		return nil, fmt.Errorf("bad type %s: %s", typ, pageInfo.Name)
+	}
+	pageInfoField, err := sb.buildField(pageInfoType, pageInfo)
 	pageInfoNonNull, _ := pageInfoField.Type.(*graphql.NonNull)
 	pageInfoObj := pageInfoNonNull.Type.(*graphql.Object)
 

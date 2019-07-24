@@ -41,16 +41,16 @@ type cachedType struct {
 func (sb *schemaBuilder) getType(nodeType reflect.Type) (graphql.Type, error) {
 	// Support scalars and optional scalars. Scalars have precedence over structs
 	// to have eg. time.Time function as a scalar.
-	if typeName, values, ok := sb.getEnum(nodeType); ok {
-		return &graphql.NonNull{Type: &graphql.Enum{Type: typeName, Values: values, ReverseMap: sb.enumMappings[nodeType].ReverseMap}}, nil
+	if enum, ok := sb.getEnum(nodeType); ok {
+		return &graphql.NonNull{Type: enum}, nil
 	}
 
-	if typeName, ok := getScalar(nodeType); ok {
-		return &graphql.NonNull{Type: &graphql.Scalar{Type: typeName}}, nil
+	if scalar, ok := sb.getScalar(nodeType); ok {
+		return &graphql.NonNull{Type: scalar}, nil
 	}
 	if nodeType.Kind() == reflect.Ptr {
-		if typeName, ok := getScalar(nodeType.Elem()); ok {
-			return &graphql.Scalar{Type: typeName}, nil // XXX: prefix typ with "*"
+		if scalar, ok := sb.getScalar(nodeType.Elem()); ok {
+			return scalar, nil // XXX: prefix typ with "*"
 		}
 	}
 
@@ -96,7 +96,8 @@ func (sb *schemaBuilder) getType(nodeType reflect.Type) (graphql.Type, error) {
 // response.
 func (sb *schemaBuilder) getTextMarshalerType(typ reflect.Type) (graphql.Type, error) {
 	scalar := &graphql.Scalar{
-		Type: "string",
+		Type:        "string",
+		Description: sb.objects[typ].Description,
 		Unwrapper: func(source interface{}) (interface{}, error) {
 			i := reflect.ValueOf(source)
 			if i.Kind() == reflect.Ptr && i.IsNil() {
@@ -121,26 +122,46 @@ func (sb *schemaBuilder) getTextMarshalerType(typ reflect.Type) (graphql.Type, e
 
 // getEnum gets the Enum type information for the passed in reflect.Type by
 // looking it up in our enum mappings.
-func (sb *schemaBuilder) getEnum(typ reflect.Type) (string, []string, bool) {
-	if sb.enumMappings[typ] != nil {
-		var values []string
-		for mapping := range sb.enumMappings[typ].Map {
-			values = append(values, mapping)
-		}
-		return typ.Name(), values, true
+func (sb *schemaBuilder) getEnum(typ reflect.Type) (*graphql.Enum, bool) {
+	if sb.enumMappings[typ] == nil {
+		return nil, false
 	}
-	return "", nil, false
+	var values []string
+	var desc string
+
+	for mapping := range sb.enumMappings[typ].Map {
+		values = append(values, mapping)
+	}
+
+	if obj, ok := sb.objects[typ]; ok {
+		desc = obj.Description
+	}
+	return &graphql.Enum{
+		Type:        typ.Name(),
+		Description: desc,
+		Values:      values,
+		ReverseMap:  sb.enumMappings[typ].ReverseMap,
+	}, true
 }
 
 // getScalar grabs the appropriate scalar graphql field type name for the passed
 // in variable reflect type.
-func getScalar(typ reflect.Type) (string, bool) {
+func (sb *schemaBuilder) getScalar(typ reflect.Type) (*graphql.Scalar, bool) {
 	for match, name := range scalars {
 		if internal.TypesIdenticalOrScalarAliases(match, typ) {
-			return name, true
+			var desc string
+			if obj, ok := sb.objects[typ]; ok {
+				desc = obj.Description
+			} else {
+				desc = fmt.Sprintf("Scalar type %s", typ)
+			}
+			return &graphql.Scalar{
+				Type:        name,
+				Description: desc,
+			}, true
 		}
 	}
-	return "", false
+	return nil, false
 }
 
 var scalars = map[reflect.Type]string{
