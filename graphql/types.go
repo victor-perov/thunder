@@ -123,7 +123,21 @@ type Resolver func(ctx context.Context, source, args interface{}, selectionSet *
 
 // Estimator is a function that estimates cost of resolving things. Returns the
 // cost, a boolean for whether the recursive descend is needed, and the error.
-type Estimator func(ctx context.Context, source, args interface{}, selectionSet *SelectionSet) (uint64, bool, error)
+type Estimator func(ctx context.Context, source, args interface{}, selectionSet *SelectionSet) (Estimation, error)
+
+// Estimation is represents necessary data for providing cost estimation and
+// further analysis
+type Estimation struct {
+	Height   uint64
+	Width    uint64
+	Duration uint64
+	Descend  bool
+}
+
+// Cost calculates cost for provided estimation
+func (estimation Estimation) Cost() uint64 {
+	return estimation.Height * estimation.Width
+}
 
 // Field knows how to compute field values of an Object
 //
