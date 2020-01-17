@@ -58,7 +58,7 @@ func SendError(w http.ResponseWriter, message string) error {
 }
 
 func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	writeResponse := func(value interface{}, err error, query *string) {
+	writeResponse := func(ctx context.Context, value interface{}, err error, query *string) {
 		var errors []error
 		var responseJSON []byte
 
@@ -77,7 +77,7 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				errors = append(errors, err)
 			}
-			h.finalHandler(len(responseJSON), errors, query)
+			h.finalHandler(ctx, len(responseJSON), errors, query)
 			return
 		}
 		if w.Header().Get("Content-Type") == "" {
@@ -88,28 +88,28 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			errors = append(errors, err)
 		}
-		h.finalHandler(len(responseJSON), errors, query)
+		h.finalHandler(ctx, len(responseJSON), errors, query)
 	}
 
 	if r.Method != "POST" {
-		writeResponse(nil, NewClientError("request must be a POST"), nil)
+		writeResponse(r.Context(), nil, NewClientError("request must be a POST"), nil)
 		return
 	}
 
 	if r.Body == nil {
-		writeResponse(nil, NewClientError("request must include a query"), nil)
+		writeResponse(r.Context(), nil, NewClientError("request must include a query"), nil)
 		return
 	}
 
 	var params httpPostBody
 	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
-		writeResponse(nil, NewClientError(fmt.Sprintf("failed to recognize JSON request: '%s'", err.Error())), nil)
+		writeResponse(r.Context(), nil, NewClientError(fmt.Sprintf("failed to recognize JSON request: '%s'", err.Error())), nil)
 		return
 	}
 
 	query, err := Parse(params.Query, params.Variables)
 	if err != nil {
-		writeResponse(nil, err, &params.Query)
+		writeResponse(r.Context(), nil, err, &params.Query)
 		return
 	}
 
@@ -118,7 +118,7 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		schema = h.schema.Mutation
 	}
 	if err := PrepareQuery(schema, query.SelectionSet); err != nil {
-		writeResponse(nil, err, &params.Query)
+		writeResponse(r.Context(), nil, err, &params.Query)
 		return
 	}
 
@@ -149,12 +149,12 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		if err != nil {
 			if ErrorCause(err) != context.Canceled {
-				writeResponse(nil, err, &params.Query)
+				writeResponse(ctx, nil, err, &params.Query)
 			}
 			return nil, err
 		}
 
-		writeResponse(current, nil, nil)
+		writeResponse(ctx, current, nil, nil)
 		return nil, nil
 	}, DefaultMinRerunInterval)
 

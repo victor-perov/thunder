@@ -23,7 +23,7 @@ type ComputationOutput struct {
 
 // finalResponseFunc describes function that will be fired after sending
 // response from writeResponse func
-type finalResponseFunc func(responseLength int, errors []error, query *string)
+type finalResponseFunc func(ctx context.Context, responseLength int, errors []error, query *string)
 type MiddlewareFunc func(input *ComputationInput, next MiddlewareNextFunc) *ComputationOutput
 type MiddlewareNextFunc func(input *ComputationInput) *ComputationOutput
 

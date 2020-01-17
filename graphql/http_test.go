@@ -1,6 +1,7 @@
 package graphql_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -24,7 +25,7 @@ func testHTTPRequest(req *http.Request) *httptest.ResponseRecorder {
 	builtSchema := schema.MustBuild()
 
 	rr := httptest.NewRecorder()
-	finalHandler := func(responseLength int, errors []error, query *string) {}
+	finalHandler := func(ctx context.Context, responseLength int, errors []error, query *string) {}
 	handler := graphql.HTTPHandlerWithHooks(builtSchema, finalHandler)
 
 	handler.ServeHTTP(rr, req)
